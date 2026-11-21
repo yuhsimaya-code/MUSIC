@@ -1,0 +1,2702 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>10010110 // Web Audio V4 — 3D 音樂視覺化工作室</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<script async src="https://unpkg.com/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  :root {
+    --bg-core: #020604;
+    --panel-bg: rgba(4, 14, 9, 0.86);
+    --panel-border: rgba(0, 255, 102, 0.38);
+    --neon-main: #00ff66;
+    --neon-dim: rgba(0, 255, 102, 0.14);
+    --neon-glow: rgba(0, 255, 102, 0.35);
+    --cyan-accent: #00e5ff;
+    --amber-warn: #ffb000;
+    --danger: #ff3355;
+    --text-main: #c8ffe0;
+    --text-muted: #589c78;
+    --font-mono: 'JetBrains Mono', 'Noto Sans TC', monospace;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-core);
+    color: var(--text-main);
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  #webgl-container {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+  }
+
+  #matrix-rain {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    opacity: 0.16;
+  }
+
+  /* Scanlines + Vignette */
+  .crt-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    background:
+      linear-gradient(rgba(0, 255, 102, 0.03) 50%, rgba(0, 0, 0, 0.25) 50%),
+      radial-gradient(circle at center, transparent 58%, rgba(0, 0, 0, 0.72) 100%);
+    background-size: 100% 4px, 100% 100%;
+  }
+
+  /* Corner Tactical Brackets */
+  .hud-corner {
+    position: fixed;
+    width: 24px;
+    height: 24px;
+    z-index: 5;
+    pointer-events: none;
+    border-color: var(--neon-main);
+    border-style: solid;
+    opacity: 0.75;
+  }
+  .hud-tl { top: 8px; left: 8px; border-width: 2px 0 0 2px; }
+  .hud-tr { top: 8px; right: 8px; border-width: 2px 2px 0 0; }
+  .hud-bl { bottom: 8px; left: 8px; border-width: 0 0 2px 2px; }
+  .hud-br { bottom: 8px; right: 8px; border-width: 0 2px 2px 0; }
+
+  /* Top Command Telemetry Bar */
+  #top-bar {
+    position: fixed;
+    top: 10px;
+    left: 14px;
+    right: 14px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 12px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    backdrop-filter: blur(8px);
+    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+    box-shadow: 0 0 18px rgba(0, 255, 102, 0.12);
+    transition: transform 0.28s ease, opacity 0.28s ease;
+  }
+
+  .brand-cluster {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .binary-badge {
+    background: var(--neon-dim);
+    border: 1px solid var(--neon-main);
+    color: var(--neon-main);
+    padding: 2px 6px;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-shadow: 0 0 8px var(--neon-glow);
+    white-space: nowrap;
+  }
+
+  .app-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #e8fff2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .telemetry-strip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .telemetry-strip span b {
+    color: var(--neon-main);
+    font-weight: 600;
+  }
+
+  .top-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  /* Hacker Buttons */
+  .hk-btn {
+    background: rgba(0, 25, 14, 0.85);
+    border: 1px solid var(--panel-border);
+    color: var(--text-main);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 5px 9px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+
+  .hk-btn:hover {
+    border-color: var(--neon-main);
+    background: rgba(0, 255, 102, 0.16);
+    box-shadow: 0 0 10px var(--neon-glow);
+    color: #fff;
+  }
+
+  .hk-btn.active {
+    background: var(--neon-main);
+    color: #020804;
+    border-color: var(--neon-main);
+    font-weight: 700;
+    box-shadow: 0 0 12px var(--neon-glow);
+  }
+
+  .hk-btn.warn {
+    border-color: rgba(255, 176, 0, 0.5);
+    color: var(--amber-warn);
+  }
+  .hk-btn.warn:hover {
+    background: rgba(255, 176, 0, 0.16);
+    border-color: var(--amber-warn);
+  }
+
+  /* Side Tactical Docks */
+  .side-dock {
+    position: fixed;
+    top: 56px;
+    bottom: 92px;
+    width: 276px;
+    z-index: 15;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease;
+    overflow: hidden;
+  }
+
+  #left-dock {
+    left: 14px;
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+  }
+
+  #right-dock {
+    right: 14px;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+  }
+
+  #left-dock.collapsed {
+    transform: translateX(calc(-100% - 24px));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  #right-dock.collapsed {
+    transform: translateX(calc(100% + 24px));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .dock-header {
+    padding: 8px 11px;
+    background: rgba(0, 255, 102, 0.08);
+    border-bottom: 1px solid var(--panel-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--neon-main);
+    letter-spacing: 0.5px;
+  }
+
+  .dock-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .dock-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+  .dock-scroll::-webkit-scrollbar-thumb {
+    background: var(--panel-border);
+  }
+
+  .sec-block {
+    border: 1px solid rgba(0, 255, 102, 0.18);
+    background: rgba(0, 12, 7, 0.55);
+    padding: 8px;
+  }
+
+  .sec-title {
+    font-size: 10px;
+    color: var(--cyan-accent);
+    margin-bottom: 7px;
+    letter-spacing: 0.8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* 12 Effects Grid */
+  .fx-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+  }
+
+  .fx-btn {
+    text-align: left;
+    padding: 6px 7px;
+    font-size: 11px;
+    justify-content: flex-start;
+    border-left: 2px solid transparent;
+  }
+
+  .fx-btn.active {
+    border-left-color: #fff;
+  }
+
+  /* Sliders */
+  .ctrl-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .ctrl-row:last-child {
+    margin-bottom: 0;
+  }
+
+  .ctrl-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-main);
+  }
+
+  .ctrl-label span:last-child {
+    color: var(--neon-main);
+    font-weight: 700;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    background: rgba(0, 255, 102, 0.2);
+    outline: none;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    background: var(--neon-main);
+    border: 1px solid #020804;
+    box-shadow: 0 0 8px var(--neon-glow);
+    cursor: pointer;
+  }
+
+  /* Theme Grid */
+  .theme-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    margin-bottom: 8px;
+  }
+
+  .theme-btn {
+    padding: 5px 4px;
+    font-size: 11px;
+    text-align: center;
+  }
+
+  /* Audio Source Controls */
+  .source-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+  }
+
+  .yt-box {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .yt-input-row {
+    display: flex;
+    gap: 4px;
+  }
+
+  .hk-input {
+    flex: 1;
+    min-width: 0;
+    background: rgba(0, 8, 4, 0.95);
+    border: 1px solid var(--panel-border);
+    color: var(--neon-main);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 5px 7px;
+    outline: none;
+    user-select: text;
+  }
+
+  .hk-input:focus {
+    border-color: var(--neon-main);
+    box-shadow: 0 0 8px var(--neon-glow);
+  }
+
+  #yt-frame-wrap {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border: 1px solid var(--panel-border);
+    background: #000;
+    display: none;
+    overflow: hidden;
+  }
+
+  #yt-frame-wrap.visible {
+    display: block;
+  }
+
+  #yt-frame-wrap iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+
+  .status-terminal {
+    font-size: 10px;
+    line-height: 1.45;
+    padding: 6px 7px;
+    background: rgba(0, 0, 0, 0.75);
+    border-left: 2px solid var(--neon-main);
+    color: #9be8be;
+    word-break: break-word;
+  }
+
+  .status-terminal.warn {
+    border-left-color: var(--amber-warn);
+    color: #ffd479;
+  }
+
+  /* Bottom Spectrum Console */
+  #bottom-console {
+    position: fixed;
+    left: 14px;
+    right: 14px;
+    bottom: 10px;
+    height: 74px;
+    z-index: 18;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    backdrop-filter: blur(8px);
+    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%, 0 12px);
+    transition: transform 0.28s ease, opacity 0.28s ease;
+  }
+
+  .transport-cluster {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  #btn-play-pause {
+    padding: 8px 12px;
+    font-weight: 700;
+    border-color: var(--neon-main);
+  }
+
+  .spectrum-wrap {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-width: 0;
+  }
+
+  .spec-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .spec-meta span b {
+    color: var(--neon-main);
+  }
+
+  #spectrum-canvas {
+    width: 100%;
+    height: 44px;
+    display: block;
+    background: rgba(0, 8, 4, 0.65);
+    border: 1px solid rgba(0, 255, 102, 0.2);
+  }
+
+  /* Pure Visual Mode Restore Button */
+  #exit-pure-btn {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    z-index: 50;
+    display: none;
+    background: rgba(2, 10, 6, 0.85);
+    border: 1px solid var(--neon-main);
+    color: var(--neon-main);
+    padding: 7px 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    cursor: pointer;
+    box-shadow: 0 0 14px var(--neon-glow);
+  }
+
+  body.pure-visual #top-bar,
+  body.pure-visual #left-dock,
+  body.pure-visual #right-dock,
+  body.pure-visual #bottom-console,
+  body.pure-visual .hud-corner {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transform: scale(0.98);
+  }
+
+  body.pure-visual #exit-pure-btn {
+    display: inline-flex;
+  }
+
+  /* Drag & Drop Overlay */
+  #drop-overlay {
+    position: fixed;
+    inset: 16px;
+    z-index: 60;
+    background: rgba(2, 16, 9, 0.9);
+    border: 2px dashed var(--neon-main);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    color: var(--neon-main);
+    font-size: 16px;
+    font-weight: 700;
+    pointer-events: none;
+  }
+  #drop-overlay.active {
+    display: flex;
+  }
+
+  /* Mobile Responsive Safety (390x844 and narrow screens) */
+  @media (max-width: 860px) {
+    .telemetry-strip {
+      display: none;
+    }
+    .app-title {
+      font-size: 12px;
+    }
+    .side-dock {
+      width: calc(100vw - 28px);
+      max-width: 362px;
+      top: 52px;
+      bottom: 86px;
+    }
+    #bottom-console {
+      height: 68px;
+      padding: 5px 8px;
+      gap: 8px;
+    }
+    .hk-btn {
+      padding: 5px 7px;
+      font-size: 10px;
+    }
+  }
+</style>
+</head>
+<body>
+  <div id="webgl-container"></div>
+  <canvas id="matrix-rain"></canvas>
+  <div class="crt-overlay"></div>
+
+  <div class="hud-corner hud-tl"></div>
+  <div class="hud-corner hud-tr"></div>
+  <div class="hud-corner hud-bl"></div>
+  <div class="hud-corner hud-br"></div>
+
+  <button id="exit-pure-btn" title="按 ESC 鍵亦可返回">[ ESC // 恢復介面 ]</button>
+
+  <div id="drop-overlay">
+    <div>[ 10010110 // 偵測到音訊封包 ]</div>
+    <div style="font-size:12px;color:#9be8be;">釋放滑鼠以載入 MP3 / WAV / M4A / OGG 音軌</div>
+  </div>
+
+  <!-- Top Telemetry & Action Bar -->
+  <header id="top-bar">
+    <div class="brand-cluster">
+      <span class="binary-badge">10010110</span>
+      <span class="app-title">WEB AUDIO V4 // 3D 視覺工作室</span>
+      <div class="telemetry-strip">
+        <span>SYS:<b id="hud-tier">DESKTOP</b></span>
+        <span>FPS:<b id="hud-fps">60</b></span>
+        <span>PTS:<b id="hud-pts">2500</b></span>
+        <span>FX:<b id="hud-fx">雷射隧道</b></span>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="hk-btn active" id="toggle-left-btn" title="切換特效與參數面板">[ 特效/參數 ]</button>
+      <button class="hk-btn active" id="toggle-right-btn" title="切換音訊與主題面板">[ 音訊/主題 ]</button>
+      <button class="hk-btn" id="btn-screenshot" title="下載 PNG 截圖">[ 截圖 ]</button>
+      <button class="hk-btn" id="btn-pure" title="隱藏所有 UI 面板">[ 純視覺 ]</button>
+      <button class="hk-btn" id="btn-fullscreen" title="切換全螢幕">[ 全螢幕 ]</button>
+    </div>
+  </header>
+
+  <!-- Left Dock: 12 3D Effects & Visual Parameters -->
+  <aside id="left-dock" class="side-dock">
+    <div class="dock-header">
+      <span>&gt;_ 01 // 3D 視覺矩陣 (12 MODES)</span>
+      <button class="hk-btn" id="close-left-btn" style="padding:2px 6px;">X</button>
+    </div>
+    <div class="dock-scroll">
+      <div class="sec-block">
+        <div class="sec-title"><span>V4 進階特效 (6)</span><span>GPU_SAFE</span></div>
+        <div class="fx-grid" id="fx-grid-v4"></div>
+      </div>
+
+      <div class="sec-block">
+        <div class="sec-title"><span>經典粒子特效 (6)</span><span>LEGACY_CORE</span></div>
+        <div class="fx-grid" id="fx-grid-classic"></div>
+      </div>
+
+      <div class="sec-block">
+        <div class="sec-title"><span>渲染與動態參數</span><span>REALTIME</span></div>
+
+        <div class="ctrl-row">
+          <div class="ctrl-label"><span>場景亮度</span><span id="val-brightness">70%</span></div>
+          <input type="range" id="slider-brightness" min="20" max="130" value="70" />
+        </div>
+
+        <div class="ctrl-row">
+          <div class="ctrl-label"><span>粒子數量</span><span id="val-particles">2500</span></div>
+          <input type="range" id="slider-particles" min="500" max="5000" step="100" value="2500" />
+        </div>
+
+        <div class="ctrl-row">
+          <div class="ctrl-label"><span>音樂律動強度</span><span id="val-reactivity">1.20x</span></div>
+          <input type="range" id="slider-reactivity" min="20" max="250" value="120" />
+        </div>
+
+        <div class="ctrl-row">
+          <div class="ctrl-label"><span>音樂線條長度</span><span id="val-linelen">1.00x</span></div>
+          <input type="range" id="slider-linelen" min="30" max="220" value="100" />
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Right Dock: Audio Engine & Color Themes -->
+  <aside id="right-dock" class="side-dock">
+    <div class="dock-header">
+      <span>&gt;_ 02 // 音訊引擎與色彩</span>
+      <button class="hk-btn" id="close-right-btn" style="padding:2px 6px;">X</button>
+    </div>
+    <div class="dock-scroll">
+      <div class="sec-block">
+        <div class="sec-title"><span>音訊訊號來源 (5 MODES)</span><span>FFT:1024</span></div>
+        <div class="source-grid">
+          <button class="hk-btn active" id="src-synth">[ 原創示範音樂 ]</button>
+          <button class="hk-btn" id="src-file">[ 上傳音訊檔 ]</button>
+          <button class="hk-btn" id="src-mic">[ 麥克風收音 ]</button>
+          <button class="hk-btn warn" id="src-tab">[ 分享分頁音訊 ]</button>
+        </div>
+        <input type="file" id="audio-file-input" accept=".mp3,.wav,.m4a,.ogg,audio/*" style="display:none;" />
+
+        <div class="yt-box">
+          <div class="yt-input-row">
+            <input type="text" id="yt-url-input" class="hk-input" placeholder="貼上 YouTube 網址或影片 ID..." />
+            <button class="hk-btn" id="btn-yt-load">載入</button>
+          </div>
+          <div id="yt-frame-wrap"></div>
+        </div>
+
+        <div style="margin-top:8px;">
+          <div id="audio-status" class="status-terminal">
+            [SYS] 就緒：點擊「播放」啟動內建 10010110 合成器節拍，或切換其他音訊來源。
+          </div>
+        </div>
+      </div>
+
+      <div class="sec-block">
+        <div class="sec-title"><span>色彩主題與發光管線</span><span>ACES_FILMIC</span></div>
+        <div class="theme-grid" id="theme-grid">
+          <button class="hk-btn theme-btn active" data-theme="aurora">極光</button>
+          <button class="hk-btn theme-btn" data-theme="neon">霓虹</button>
+          <button class="hk-btn theme-btn" data-theme="ocean">海洋</button>
+          <button class="hk-btn theme-btn" data-theme="candy">糖果</button>
+        </div>
+
+        <div class="ctrl-row">
+          <div class="ctrl-label"><span>自訂色相 (Hue)</span><span id="val-hue">142°</span></div>
+          <input type="range" id="slider-hue" min="0" max="360" value="142" />
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+          <span style="font-size:11px;">UnrealBloom 發光後製</span>
+          <button class="hk-btn active" id="btn-bloom">[ BLOOM: 開啟 ]</button>
+        </div>
+      </div>
+
+      <div class="sec-block">
+        <div class="sec-title"><span>操作提示</span><span>10010110</span></div>
+        <div style="font-size:10px; color:var(--text-muted); line-height:1.5;">
+          • 拖曳畫面可 360° 旋轉視角，滾輪／雙指縮放。<br/>
+          • 支援直接拖放 MP3 / WAV / M4A / OGG 至視窗。<br/>
+          • YouTube 嵌入受瀏覽器跨域保護，需點擊「分享分頁音訊」並勾選「分享分頁音訊」方可驅動頻譜。
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Bottom Audio Transport & 32-Band Spectrum -->
+  <footer id="bottom-console">
+    <div class="transport-cluster">
+      <button class="hk-btn" id="btn-play-pause">[ ▶ 播放 ]</button>
+      <div style="display:flex; flex-direction:column; gap:3px; width:76px;">
+        <div style="display:flex; justify-content:space-between; font-size:10px;">
+          <span>音量</span><span id="val-volume" style="color:var(--neon-main);">80%</span>
+        </div>
+        <input type="range" id="slider-volume" min="0" max="100" value="80" />
+      </div>
+    </div>
+
+    <div class="spectrum-wrap">
+      <div class="spec-meta">
+        <span>32-BAND SPECTRUM // <b id="active-src-label">原創示範音樂</b></span>
+        <span>BASS:<b id="val-bass">0.00</b> MID:<b id="val-mid">0.00</b> HIGH:<b id="val-treble">0.00</b></span>
+      </div>
+      <canvas id="spectrum-canvas"></canvas>
+    </div>
+  </footer>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+    // =========================================================================
+    // 1. DEVICE TIER DETECTION & PERFORMANCE CONFIG
+    // =========================================================================
+    function detectDeviceTier() {
+      const w = window.innerWidth;
+      const ua = navigator.userAgent || '';
+      const isMobile = w <= 767 || /Android|iPhone|iPod|Mobile/i.test(ua);
+      const isTablet = !isMobile && (w <= 1024 || /iPad|Tablet/i.test(ua));
+      if (isMobile) {
+        return {
+          name: 'MOBILE',
+          targetFps: 30,
+          maxDpr: 1.25,
+          defaultParticles: 1100,
+          defaultBloom: false,
+          collapseSidebars: true
+        };
+      }
+      if (isTablet) {
+        return {
+          name: 'TABLET',
+          targetFps: 45,
+          maxDpr: 1.5,
+          defaultParticles: 1800,
+          defaultBloom: true,
+          collapseSidebars: true
+        };
+      }
+      return {
+        name: 'DESKTOP',
+        targetFps: 60,
+        maxDpr: 2.0,
+        defaultParticles: 2500,
+        defaultBloom: true,
+        collapseSidebars: false
+      };
+    }
+
+    const DEVICE = detectDeviceTier();
+
+    // =========================================================================
+    // 2. APPLICATION STATE & COLOR THEMES (HSL Lightness strictly <= 0.58)
+    // =========================================================================
+    const THEMES = {
+      aurora: { label: '極光', baseHue: 142, spread: 75, sat: 0.92, light: 0.48, uiMain: '#00ff66' },
+      neon:   { label: '霓虹', baseHue: 305, spread: 115, sat: 0.95, light: 0.50, uiMain: '#ff33cc' },
+      ocean:  { label: '海洋', baseHue: 192, spread: 58, sat: 0.90, light: 0.48, uiMain: '#00e5ff' },
+      candy:  { label: '糖果', baseHue: 336, spread: 145, sat: 0.88, light: 0.54, uiMain: '#ff77aa' }
+    };
+
+    const APP_STATE = {
+      effectId: 'laser_tunnel',
+      themeKey: 'aurora',
+      customHue: 142,
+      brightness: 0.70,      // 20% ~ 130%, default 70%
+      particleCount: DEVICE.defaultParticles,
+      reactivity: 1.20,
+      lineLength: 1.00,
+      bloomEnabled: DEVICE.defaultBloom,
+      isPlaying: false,
+      volume: 0.80
+    };
+
+    function getThemeColor(t, lightScale = 1.0, target = new THREE.Color()) {
+      const th = THEMES[APP_STATE.themeKey];
+      const hue = (((APP_STATE.customHue + (t - 0.5) * th.spread) % 360) + 360) % 360;
+      const l = Math.min(0.58, Math.max(0.08, th.light * APP_STATE.brightness * lightScale));
+      target.setHSL(hue / 360, th.sat, l);
+      return target;
+    }
+
+    function syncHackerHudAccent() {
+      const hue = APP_STATE.customHue;
+      const mainHex = `hsl(${hue}, 100%, 52%)`;
+      const dimRgba = `hsla(${hue}, 100%, 50%, 0.14)`;
+      const borderRgba = `hsla(${hue}, 100%, 50%, 0.40)`;
+      const glowRgba = `hsla(${hue}, 100%, 50%, 0.35)`;
+      document.documentElement.style.setProperty('--neon-main', mainHex);
+      document.documentElement.style.setProperty('--neon-dim', dimRgba);
+      document.documentElement.style.setProperty('--panel-border', borderRgba);
+      document.documentElement.style.setProperty('--neon-glow', glowRgba);
+    }
+
+    // =========================================================================
+    // 3. SUBTLE HACKER BINARY MATRIX RAIN BACKGROUND
+    // =========================================================================
+    const matrixCanvas = document.getElementById('matrix-rain');
+    const matrixCtx = matrixCanvas.getContext('2d');
+    let matrixCols = [];
+    const BINARY_CHARS = '10010110';
+
+    function resizeMatrixRain() {
+      matrixCanvas.width = window.innerWidth;
+      matrixCanvas.height = window.innerHeight;
+      const colCount = Math.floor(matrixCanvas.width / 22);
+      matrixCols = new Array(colCount).fill(0).map(() => Math.random() * matrixCanvas.height);
+    }
+    resizeMatrixRain();
+
+    let lastMatrixTick = 0;
+    function renderMatrixRain(now) {
+      if (now - lastMatrixTick < 75) return;
+      lastMatrixTick = now;
+      matrixCtx.fillStyle = 'rgba(2, 6, 4, 0.18)';
+      matrixCtx.fillRect(0, 0, matrixCanvas.width, matrixCanvas.height);
+      matrixCtx.fillStyle = `hsl(${APP_STATE.customHue}, 100%, 50%)`;
+      matrixCtx.font = '12px JetBrains Mono, monospace';
+      for (let i = 0; i < matrixCols.length; i++) {
+        const ch = BINARY_CHARS[(i + Math.floor(matrixCols[i])) % BINARY_CHARS.length];
+        matrixCtx.fillText(ch, i * 22, matrixCols[i]);
+        if (matrixCols[i] > matrixCanvas.height && Math.random() > 0.975) {
+          matrixCols[i] = 0;
+        } else {
+          matrixCols[i] += 14;
+        }
+      }
+    }
+
+    // =========================================================================
+    // 4. WEB AUDIO API REAL AUDIO ENGINE (AudioEngine)
+    // =========================================================================
+    class AudioEngine {
+      constructor() {
+        this.ctx = null;
+        this.analyser = null;
+        this.masterGain = null;
+        this.freqData = null;
+
+        this.sourceMode = 'synth'; // 'synth' | 'file' | 'mic' | 'youtube'
+        this.isPlaying = false;
+
+        // File playback elements
+        this.audioEl = new Audio();
+        this.audioEl.loop = true;
+        this.audioEl.crossOrigin = 'anonymous';
+        this.mediaElSource = null;
+        this.currentObjectUrl = null;
+
+        // Live streams (mic / tab share)
+        this.activeStream = null;
+        this.streamSource = null;
+        this.tabAudioCaptured = false;
+
+        // Built-in Synth Sequencer
+        this.synthTimer = null;
+        this.synthStep = 0;
+
+        // Computed analysis outputs
+        this.bass = 0;
+        this.mid = 0;
+        this.treble = 0;
+        this.bands32 = new Float32Array(32);
+      }
+
+      ensureContext() {
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioCtx();
+          this.analyser = this.ctx.createAnalyser();
+          this.analyser.fftSize = 1024;
+          this.analyser.smoothingTimeConstant = 0.82;
+
+          this.masterGain = this.ctx.createGain();
+          this.masterGain.gain.value = APP_STATE.volume;
+          this.masterGain.connect(this.ctx.destination);
+
+          this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      setVolume(val) {
+        APP_STATE.volume = val;
+        if (this.masterGain && this.ctx) {
+          this.masterGain.gain.setTargetAtTime(val, this.ctx.currentTime, 0.02);
+        }
+      }
+
+      stopActiveStreams() {
+        if (this.streamSource) {
+          try { this.streamSource.disconnect(); } catch (e) {}
+          this.streamSource = null;
+        }
+        if (this.activeStream) {
+          this.activeStream.getTracks().forEach(t => t.stop());
+          this.activeStream = null;
+        }
+        this.tabAudioCaptured = false;
+      }
+
+      stopSynth() {
+        if (this.synthTimer) {
+          clearInterval(this.synthTimer);
+          this.synthTimer = null;
+        }
+      }
+
+      startSynthLoop() {
+        this.stopSynth();
+        this.ensureContext();
+        // Ensure analyser routes to speakers for synth
+        try { this.analyser.disconnect(); } catch (e) {}
+        this.analyser.connect(this.masterGain);
+
+        const tempoBpm = 124;
+        const stepMs = (60 / tempoBpm / 4) * 1000; // 16th notes
+        const scale = [110.0, 130.81, 146.83, 164.81, 196.00, 220.0, 261.63, 293.66];
+        const bassNotes = [55.0, 55.0, 65.41, 49.0];
+
+        const triggerStep = () => {
+          if (!this.isPlaying || this.sourceMode !== 'synth') return;
+          const now = this.ctx.currentTime;
+          const step = this.synthStep % 16;
+
+          // 1. Kick on 0, 4, 8, 12
+          if (step % 4 === 0) {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(145, now);
+            osc.frequency.exponentialRampToValueAtTime(36, now + 0.14);
+            gain.gain.setValueAtTime(0.85, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+            osc.connect(gain);
+            gain.connect(this.analyser);
+            osc.start(now);
+            osc.stop(now + 0.23);
+          }
+
+          // 2. Rolling Hacker Bassline on off-beats
+          if (step % 2 === 0) {
+            const osc = this.ctx.createOscillator();
+            const filter = this.ctx.createBiquadFilter();
+            const gain = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            const root = bassNotes[Math.floor(this.synthStep / 16) % bassNotes.length];
+            osc.frequency.setValueAtTime(step % 4 === 2 ? root * 2 : root, now);
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(380, now);
+            filter.frequency.exponentialRampToValueAtTime(120, now + 0.16);
+            gain.gain.setValueAtTime(0.32, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.analyser);
+            osc.start(now);
+            osc.stop(now + 0.19);
+          }
+
+          // 3. Arpeggio Lead (Mid frequencies)
+          if (step % 2 === 1 || step === 0 || step === 6) {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'triangle';
+            const note = scale[(step * 3 + Math.floor(this.synthStep / 8)) % scale.length];
+            osc.frequency.setValueAtTime(note * 2, now);
+            gain.gain.setValueAtTime(0.20, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+            osc.connect(gain);
+            gain.connect(this.analyser);
+            osc.start(now);
+            osc.stop(now + 0.17);
+          }
+
+          // 4. Crisp Hi-Hat (Treble frequencies)
+          if (step % 2 === 1) {
+            const bufferSize = Math.floor(this.ctx.sampleRate * 0.045);
+            const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+              data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+            }
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = buffer;
+            const hp = this.ctx.createBiquadFilter();
+            hp.type = 'highpass';
+            hp.frequency.setValueAtTime(7200, now);
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(step % 4 === 3 ? 0.24 : 0.11, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+            noise.connect(hp);
+            hp.connect(gain);
+            gain.connect(this.analyser);
+            noise.start(now);
+          }
+
+          this.synthStep++;
+        };
+
+        triggerStep();
+        this.synthTimer = setInterval(triggerStep, stepMs);
+      }
+
+      async useSynth() {
+        this.stopActiveStreams();
+        this.audioEl.pause();
+        this.sourceMode = 'synth';
+        this.ensureContext();
+        this.isPlaying = true;
+        this.startSynthLoop();
+        updateStatus('[SYNTH] 正在播放內建 10010110 合成器節拍 (124 BPM)', false);
+      }
+
+      async loadAudioFile(file) {
+        if (!file) return;
+        this.stopActiveStreams();
+        this.stopSynth();
+        this.ensureContext();
+
+        if (this.currentObjectUrl) {
+          URL.revokeObjectURL(this.currentObjectUrl);
+        }
+        this.currentObjectUrl = URL.createObjectURL(file);
+        this.audioEl.src = this.currentObjectUrl;
+
+        if (!this.mediaElSource) {
+          this.mediaElSource = this.ctx.createMediaElementSource(this.audioEl);
+        }
+        try { this.mediaElSource.disconnect(); } catch (e) {}
+        try { this.analyser.disconnect(); } catch (e) {}
+
+        this.mediaElSource.connect(this.analyser);
+        this.analyser.connect(this.masterGain);
+
+        this.sourceMode = 'file';
+        await this.audioEl.play();
+        this.isPlaying = true;
+        updateStatus(`[FILE] 循環播放音軌：${file.name}`, false);
+      }
+
+      async useMicrophone() {
+        this.stopActiveStreams();
+        this.stopSynth();
+        this.audioEl.pause();
+        this.ensureContext();
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+          });
+          this.activeStream = stream;
+          this.streamSource = this.ctx.createMediaStreamSource(stream);
+
+          // Disconnect analyser from speakers to strictly prevent feedback howl
+          try { this.analyser.disconnect(); } catch (e) {}
+          this.streamSource.connect(this.analyser);
+
+          this.sourceMode = 'mic';
+          this.isPlaying = true;
+          updateStatus('[MIC] 麥克風即時收音中（已自動靜音喇叭輸出防止回授嘯叫）', false);
+        } catch (err) {
+          updateStatus(`[ERR] 無法存取麥克風：${err.message}`, true);
+        }
+      }
+
+      setYouTubeMode(videoId) {
+        this.stopActiveStreams();
+        this.stopSynth();
+        this.audioEl.pause();
+        this.sourceMode = 'youtube';
+        this.tabAudioCaptured = false;
+        this.isPlaying = true;
+
+        const wrap = document.getElementById('yt-frame-wrap');
+        wrap.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+        wrap.classList.add('visible');
+
+        updateStatus('[YOUTUBE] 影片已嵌入。受瀏覽器跨域安全限制，請點擊「分享分頁音訊」並勾選「分享分頁音訊」以驅動真實頻譜（未擷取前頻譜保持為 0）。', true);
+      }
+
+      async captureTabAudio() {
+        this.ensureContext();
+        try {
+          const stream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: true
+          });
+
+          // Immediately stop video track to save GPU/CPU performance
+          stream.getVideoTracks().forEach(track => track.stop());
+
+          const audioTracks = stream.getAudioTracks();
+          if (!audioTracks || audioTracks.length === 0) {
+            stream.getTracks().forEach(t => t.stop());
+            updateStatus('[WARN] 未偵測到分頁音訊軌！請重新分享並務必勾選視窗左下角「分享分頁音訊」。', true);
+            return;
+          }
+
+          this.stopActiveStreams();
+          this.stopSynth();
+          this.audioEl.pause();
+
+          this.activeStream = stream;
+          this.streamSource = this.ctx.createMediaStreamSource(stream);
+
+          // Do not route tab audio back to speakers (tab itself already outputs audio)
+          try { this.analyser.disconnect(); } catch (e) {}
+          this.streamSource.connect(this.analyser);
+
+          this.sourceMode = 'youtube';
+          this.tabAudioCaptured = true;
+          this.isPlaying = true;
+
+          audioTracks[0].addEventListener('ended', () => {
+            this.tabAudioCaptured = false;
+            updateStatus('[INFO] 分頁音訊分享已停止，頻譜已歸零。', true);
+          });
+
+          updateStatus('[LIVE] 已成功擷取分頁真實音訊軌！即時頻譜分析啟動。', false);
+        } catch (err) {
+          updateStatus(`[WARN] 分頁音訊擷取取消或失敗：${err.message}`, true);
+        }
+      }
+
+      togglePlayPause() {
+        this.ensureContext();
+        if (this.isPlaying) {
+          this.isPlaying = false;
+          if (this.sourceMode === 'synth') this.stopSynth();
+          if (this.sourceMode === 'file') this.audioEl.pause();
+          updateStatus('[PAUSE] 音訊分析已暫停', false);
+        } else {
+          this.isPlaying = true;
+          if (this.sourceMode === 'synth') {
+            this.startSynthLoop();
+            updateStatus('[SYNTH] 繼續播放內建 10010110 合成器節拍', false);
+          } else if (this.sourceMode === 'file' && this.audioEl.src) {
+            this.audioEl.play();
+            updateStatus('[FILE] 繼續播放音訊檔案', false);
+          } else if (this.sourceMode === 'mic' || this.tabAudioCaptured) {
+            updateStatus('[LIVE] 即時音訊流分析恢復中', false);
+          } else if (this.sourceMode === 'youtube') {
+            updateStatus('[YOUTUBE] 等待分享分頁音訊軌（未擷取前頻譜保持為 0）', true);
+          }
+        }
+        return this.isPlaying;
+      }
+
+      update() {
+        // Strict authenticity rule: if YouTube mode without captured tab audio, force all bands to 0
+        if (!this.isPlaying || !this.analyser || (this.sourceMode === 'youtube' && !this.tabAudioCaptured)) {
+          this.bass *= 0.75;
+          this.mid *= 0.75;
+          this.treble *= 0.75;
+          if (this.bass < 0.001) this.bass = 0;
+          if (this.mid < 0.001) this.mid = 0;
+          if (this.treble < 0.001) this.treble = 0;
+          for (let i = 0; i < 32; i++) {
+            this.bands32[i] *= 0.72;
+            if (this.bands32[i] < 0.001) this.bands32[i] = 0;
+          }
+          return;
+        }
+
+        this.analyser.getByteFrequencyData(this.freqData);
+        const binCount = this.freqData.length; // 512 bins
+
+        // Bass: 0 ~ 14 (~0 - 600Hz)
+        let bassSum = 0;
+        for (let i = 1; i <= 14; i++) bassSum += this.freqData[i];
+        this.bass = (bassSum / (14 * 255));
+
+        // Mid: 15 ~ 90 (~600Hz - 3.8kHz)
+        let midSum = 0;
+        for (let i = 15; i <= 90; i++) midSum += this.freqData[i];
+        this.mid = (midSum / (76 * 255));
+
+        // Treble: 91 ~ 260 (~3.8kHz - 11kHz)
+        let trebleSum = 0;
+        for (let i = 91; i <= 260; i++) trebleSum += this.freqData[i];
+        this.treble = (trebleSum / (170 * 255));
+
+        // Logarithmic-like mapping into 32 frequency bands
+        for (let b = 0; b < 32; b++) {
+          const start = Math.floor(Math.pow(b / 32, 1.65) * 300) + 1;
+          const end = Math.max(start + 1, Math.floor(Math.pow((b + 1) / 32, 1.65) * 300) + 1);
+          let sum = 0;
+          let count = 0;
+          for (let k = start; k < end && k < binCount; k++) {
+            sum += this.freqData[k];
+            count++;
+          }
+          this.bands32[b] = count > 0 ? (sum / (count * 255)) : 0;
+        }
+      }
+    }
+
+    const audioEngine = new AudioEngine();
+
+    // =========================================================================
+    // 5. THREE.JS 0.187.0 RENDERER & POST-PROCESSING PIPELINE
+    // =========================================================================
+    const container = document.getElementById('webgl-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x020503);
+    scene.fog = new THREE.FogExp2(0x020503, 0.012);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 300);
+    camera.position.set(0, 4, 24);
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: DEVICE.name === 'DESKTOP',
+      preserveDrawingBuffer: true, // Required for non-black PNG screenshots
+      powerPreference: 'high-performance'
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, DEVICE.maxDpr));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.minDistance = 5;
+    controls.maxDistance = 85;
+
+    // EffectComposer + Conservative UnrealBloomPass + OutputPass
+    const composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.42, // strength
+      0.55, // radius
+      0.68  // threshold
+    );
+    bloomPass.enabled = APP_STATE.bloomEnabled;
+    composer.addPass(bloomPass);
+
+    const outputPass = new OutputPass();
+    composer.addPass(outputPass);
+
+    // WebGL Context Lost Guard
+    renderer.domElement.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      updateStatus('[WARN] WebGL 繪圖內容暫時遺失，正在等待 GPU 恢復...', true);
+    });
+    renderer.domElement.addEventListener('webglcontextrestored', () => {
+      updateStatus('[SYS] WebGL 繪圖管線已恢復正常。', false);
+      buildEffect(APP_STATE.effectId);
+    });
+
+    // =========================================================================
+    // 6. 12 3D VISUAL EFFECTS (WITH STRICT GPU RESOURCE DISPOSAL)
+    // =========================================================================
+    const EFFECT_DEFS = [
+      { id: 'laser_tunnel',      name: '雷射隧道', group: 'v4' },
+      { id: 'aurora_ribbon',     name: '極光絲帶', group: 'v4' },
+      { id: 'neon_wave',         name: '霓虹波形', group: 'v4' },
+      { id: 'particle_galaxy',   name: '粒子星河', group: 'v4' },
+      { id: 'fiber_optics',      name: '光纖絲線', group: 'v4' },
+      { id: 'circular_spectrum', name: '環形頻譜', group: 'v4' },
+      { id: 'classic_sphere',    name: '聲波球體', group: 'classic' },
+      { id: 'classic_vortex',    name: '能量漩渦', group: 'classic' },
+      { id: 'classic_fountain',  name: '音律噴泉', group: 'classic' },
+      { id: 'classic_cube',      name: '頻譜矩陣', group: 'classic' },
+      { id: 'classic_dna',       name: '雙螺旋鏈', group: 'classic' },
+      { id: 'classic_starfield', name: '星際穿越', group: 'classic' }
+    ];
+
+    let activeEffect = null;
+
+    function disposeGroup(root) {
+      if (!root) return;
+      root.traverse((obj) => {
+        if (obj.geometry) {
+          obj.geometry.dispose();
+        }
+        if (obj.material) {
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((m) => {
+              if (m.map) m.map.dispose();
+              m.dispose();
+            });
+          } else {
+            if (obj.material.map) obj.material.map.dispose();
+            obj.material.dispose();
+          }
+        }
+      });
+      scene.remove(root);
+    }
+
+    function createSoftSpriteTexture() {
+      const c = document.createElement('canvas');
+      c.width = 64;
+      c.height = 64;
+      const ctx = c.getContext('2d');
+      const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      g.addColorStop(0, 'rgba(255,255,255,1)');
+      g.addColorStop(0.45, 'rgba(255,255,255,0.45)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 64, 64);
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    }
+
+    function buildEffect(id) {
+      if (activeEffect && activeEffect.root) {
+        disposeGroup(activeEffect.root);
+        activeEffect = null;
+      }
+
+      const root = new THREE.Group();
+      scene.add(root);
+
+      const count = APP_STATE.particleCount;
+      const tmpColor = new THREE.Color();
+
+      // -----------------------------------------------------------------------
+      // 1. LASER TUNNEL (雷射隧道)
+      // -----------------------------------------------------------------------
+      if (id === 'laser_tunnel') {
+        camera.position.set(0, 0, 22);
+        const ringCount = 24;
+        const rings = [];
+        const baseRadius = 7.5;
+        const pts = [];
+        for (let s = 0; s <= 8; s++) {
+          const a = (s / 8) * Math.PI * 2 + Math.PI / 8;
+          pts.push(new THREE.Vector3(Math.cos(a) * baseRadius, Math.sin(a) * baseRadius, 0));
+        }
+        const sharedGeo = new THREE.BufferGeometry().setFromPoints(pts);
+
+        for (let i = 0; i < ringCount; i++) {
+          const mat = new THREE.LineBasicMaterial({
+            color: getThemeColor(i / ringCount, 0.9, tmpColor),
+            transparent: true,
+            opacity: 0.78
+          });
+          const line = new THREE.Line(sharedGeo, mat);
+          line.position.z = -i * 3.5 + 15;
+          root.add(line);
+          rings.push(line);
+        }
+
+        // 8 Longitudinal Laser Beams
+        const beamPositions = new Float32Array(8 * 2 * 3);
+        for (let s = 0; s < 8; s++) {
+          const a = (s / 8) * Math.PI * 2 + Math.PI / 8;
+          const x = Math.cos(a) * baseRadius;
+          const y = Math.sin(a) * baseRadius;
+          beamPositions[s * 6 + 0] = x;
+          beamPositions[s * 6 + 1] = y;
+          beamPositions[s * 6 + 2] = -70;
+          beamPositions[s * 6 + 3] = x;
+          beamPositions[s * 6 + 4] = y;
+          beamPositions[s * 6 + 5] = 20;
+        }
+        const beamGeo = new THREE.BufferGeometry();
+        beamGeo.setAttribute('position', new THREE.BufferAttribute(beamPositions, 3));
+        const beamMat = new THREE.LineBasicMaterial({
+          color: getThemeColor(0.5, 0.85, tmpColor),
+          transparent: true,
+          opacity: 0.48
+        });
+        const beams = new THREE.LineSegments(beamGeo, beamMat);
+        root.add(beams);
+
+        activeEffect = {
+          root,
+          update(dt, t, audio) {
+            const react = APP_STATE.reactivity;
+            const speed = 14 + audio.bass * 42 * react;
+            const pulse = 1 + audio.bass * 0.34 * react;
+            root.rotation.z += dt * (0.22 + audio.mid * 1.4 * react);
+
+            for (let i = 0; i < rings.length; i++) {
+              const r = rings[i];
+              r.position.z += dt * speed;
+              if (r.position.z > 20) {
+                r.position.z -= ringCount * 3.5;
+              }
+              const bandVal = audio.bands32[i % 32];
+              const s = pulse * (0.92 + bandVal * 0.35 * react * APP_STATE.lineLength);
+              r.scale.set(s, s, 1);
+              getThemeColor((i / ringCount + t * 0.08) % 1, 0.88 + bandVal * 0.25, r.material.color);
+            }
+            beams.scale.set(pulse, pulse, 1);
+            getThemeColor((t * 0.12) % 1, 0.82, beamMat.color);
+          }
+        };
+      }
+
+      // -----------------------------------------------------------------------
+      // 2. AURORA RIBBON (極光絲帶)
+      // -----------------------------------------------------------------------
+      else if (id === 'aurora_ribbon') {
+        camera.position.set(0, 6, 26);
+        const layers = 7;
+        const segX = 96;
+        const ribbons = [];
+
+        for (let l = 0; l < layers; l++) {
+          const geo = new THREE.PlaneGeometry(38, 4.6, segX, 8);
+          const pos = geo.attributes.position;
+          const colors = new Float32Array(pos.count * 3);
+          const alphas = new Float32Array(pos.count);
+
+          for (let i = 0; i < pos.count; i++) {
+            const yNorm = Math.abs(pos.getY(i)) / 2.3; // 0 at center, 1 at top/bottom edges
+            const feather = Math.pow(Math.max(0, 1 - yNorm), 1.8);
+            alphas[i] = feather;
+            getThemeColor(l / layers, 0.82 * feather + 0.12, tmpColor);
+            colors[i * 3 + 0] = tmpColor.r * feather;
+            colors[i * 3 + 1] = tmpColor.g * feather;
+            colors[i * 3 + 2] = tmpColor.b * feather;
+          }
+          geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+          const mat = new THREE.MeshBasicMaterial({
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.42,
+            side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          });
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.position.set(0, (l - 3) * 1.15, -l * 2.8);
+          mesh.rotation.x = -0.18;
+          root.add(mesh);
+          ribbons.push({ mesh, geo, alphas, layerNorm: l / layers });
+        }
+
+        activeEffect = {
+          root,
+          update(dt, t, audio) {
+            const react = APP_STATE.reactivity;
+            const lenScale = APP_STATE.lineLength;
+            for (let l = 0; l < ribbons.length; l++) {
+              const { mesh, geo, alphas, layerNorm } = ribbons[l];
+              const pos = geo.attributes.position;
+              const col = geo.attributes.color;
+              getThemeColor((layerNorm + t * 0.04) % 1, 0.85, tmpColor);
+
+              for (let i = 0; i < pos.count; i++) {
+                const x = pos.getX(i);
+                const bandIdx = Math.min(31, Math.floor(((x + 19) / 38) * 32));
+                const bVal = audio.bands32[bandIdx];
+
+                const waveMid = Math.sin(x * 0.22 + t * 1.6 + l * 0.9) * (1.1 + audio.mid * 3.8 * react) * lenScale;
+                const rippleHigh = Math.cos(x * 0.85 - t * 4.2 + l) * (0.15 + audio.treble * 1.25 * react);
+                const bandLift = bVal * 2.4 * react * lenScale;
+
+                pos.setZ(i, waveMid + rippleHigh + bandLift);
+
+                const f = alphas[i];
+                col.setXYZ(i, tmpColor.r * f, tmpColor.g * f, tmpColor.b * f);
+              }
+              pos.needsUpdate = true;
+              col.needsUpdate = true;
+              mesh.position.y = (l - 3) * 1.15 + Math.sin(t * 0.9 + l) * 0.4;
+            }
+          }
+        };
+      }
+
+      // -----------------------------------------------------------------------
+      // 3. NEON WAVE (霓虹波形 - 16 depth layers + dark starfield, no center sphere)
+      // -----------------------------------------------------------------------
+      else if (id === 'neon_wave') {
+        camera.position.set(0, 9, 26);
+        const layerCount = 16;
+        const pointsPerLine = 96;
+        const waveLines = [];
+
+        for (let l = 0; l < layerCount; l++) {
+          const geo = new THREE.BufferGeometry();
+          const positions = new Float32Array(pointsPerLine * 3);
+          for (let i = 0; i < pointsPerLine; i++) {
+            const x = ((i / (pointsPerLine - 1)) - 0.5) * 34;
+            positions[i * 3 + 0] = x;
+            positions[i * 3 + 1] = 0;
+            positions[i * 3 + 2] = 0;
+          }
+          geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+          const mat = new THREE.LineBasicMaterial({
+            color: getThemeColor(l / layerCount, 0.9, tmpColor),
+            transparent: true,
+            opacity: 0.85 - (l / layerCount) * 0.45
+          });
+          const line = new THREE.Line(geo, mat);
+          line.position.z = -l * 2.2 + 12;
+          line.position.y = -2.5 + l * 0.22;
+          root.add(line);
+          waveLines.push({ line, geo, history: new Float32Array(pointsPerLine) });
+        }
+
+        // Background starfield
+        const starCount = Math.min(1200, count);
+        const starGeo = new THREE.BufferGeometry();
+        const starPos = new Float32Array(starCount * 3);
+        for (let i = 0; i < starCount; i++) {
+          starPos[i * 3 + 0] = (Math.random() - 0.5) * 90;
+          starPos[i * 3 + 1] = Math.random() * 35 - 5;
+          starPos[i * 3 + 2] = (Math.random() - 0.5) * 80 - 15;
+        }
+        starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+        const starMat = new THREE.PointsMaterial({
+          color: 0x66aa88,
+          size: 0.22,
+          transparent: true,
+          opacity: 0.65
+        });
+        root.add(new THREE.Points(starGeo, starMat));
+
+        let shiftAccum = 0;
+        activeEffect = {
+          root,
+          update(dt, t, audio) {
+            const react = APP_STATE.reactivity;
+            const lenScale = APP_STATE.lineLength;
+            shiftAccum += dt;
+
+            // Propagate wave history back across the 16 layers
+            if (shiftAccum >= 0.032) {
+              shiftAccum = 0;
+              for (let l = layerCount - 1; l > 0; l--) {
+                waveLines[l].history.set(waveLines[l - 1].history);
+              }
+            }
+
+            // Update front layer (layer 0) from live 32 bands
+            const front = waveLines[0];
+            for (let i = 0; i < pointsPerLine; i++) {
+              const norm = i / (pointsPerLine - 1);
+              const sym = Math.abs(norm - 0.5) * 2; // symmetric spectrum look
+              const bandIdx = Math.min(31, Math.floor(sym * 32));
+              const amp = audio.bands32[bandIdx] * 7.5 * react * lenScale;
+              const carrier = Math.sin(norm * Math.PI * 10 + t * 5.5) * (0.25 + audio.treble * 1.4);
+              front.history[i] = amp + carrier * (0.2 + audio.bands32[bandIdx]);
+            }
+
+            for (let l = 0; l < layerCount; l++) {
+              const { line, geo, history } = waveLines[l];
+              const pos = geo.attributes.position;
+              for (let i = 0; i < pointsPerLine; i++) {
+                pos.setY(i, history[i] * (1 - l * 0.035));
+              }
+              pos.needsUpdate = true;
+              getThemeColor((l / layerCount + t * 0.06) % 1, 0.92 - l * 0.02, line.material.color);
+            }
+          }
+        };
+      }
+
+      // -----------------------------------------------------------------------
+      // 4. PARTICLE GALAXY (粒子星河 - Single Draw Call Custom ShaderMaterial)
+      // -----------------------------------------------------------------------
+      else if (id === 'particle_galaxy') {
+        camera.position.set(0, 14, 24);
+        const geo = new THREE.BufferGeometry();
+        const positions = new Float32Array(count * 3);
+        const params = new Float32Array(count * 3); // x: radius, y: angle, z: seed
+
+        const arms = 4;
+        for (let i = 0; i < count; i++) {
+          const r = Math.pow(Math.random(), 0.72) * 16 + 0.6;
+          const armAngle = ((i % arms) / arms) * Math.PI * 2;
+          const spin = r * 0.42 + (Math.random() - 0.5) * 0.65;
+          const angle = armAngle + spin;
+          const y = (Math.random() - 0.5) * (2.6 / (1 + r * 0.18));
+
+          positions[i * 3 + 0] = Math.cos(angle) * r;
+          positions[i * 3 + 1] = y;
+          positions[i * 3 + 2] = Math.sin(angle) * r;
+
+          params[i * 3 + 0] = r / 16.6;
+          params[i * 3 + 1] = angle;
+          params[i * 3 + 2] = Math.random() * Math.PI * 2;
+        }
+
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('aParam', new THREE.BufferAttribute(params, 3));
+
+        const uniforms = {
+          uTime: { value: 0 },
+          uBass: { value: 0 },
+          uTreble: { value: 0 },
+          uBrightness: { value: APP_STATE.brightness },
+          uColorA: { value: getThemeColor(0.15, 0.95, new THREE.Color()) },
+          uColorB: { value: getThemeColor(0.85, 0.95, new THREE.Color()) }
+        };
+
+        const mat = new THREE.ShaderMaterial({
+          uniforms,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          vertexShader: `
+            attribute vec3 aParam;
+            uniform float uTime;
+            uniform float uBass;
+            uniform float uTreble;
+            varying float vRad;
+            varying float vTwinkle;
+            void main() {
+              vRad = aParam.x;
+              vec3 pos = position;
+              float radialExpand = 1.0 + uBass * 0.42 * (1.0 - vRad * 0.4);
+              pos.xz *= radialExpand;
+              pos.y += sin(uTime * 2.5 + aParam.z + vRad * 6.0) * (0.25 + uBass * 0.9);
+              vTwinkle = 0.55 + 0.45 * sin(uTime * (4.0 + uTreble * 10.0) + aParam.z * 3.0);
+              vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+              gl_PointSize = clamp((18.0 + uTreble * 14.0 * vTwinkle) * (1.0 / -mvPosition.z), 1.5, 10.0);
+              gl_Position = projectionMatrix * mvPosition;
+            }
+          `,
+          fragmentShader: `
+            uniform vec3 uColorA;
+            uniform vec3 uColorB;
+            uniform float uBrightness;
+            varying float vRad;
+            varying float vTwinkle;
+            void main() {
+              vec2 uv = gl_PointCoord - vec2(0.5);
+              float d = length(uv);
+              if (d > 0.5) discard;
+              float alpha = smoothstep(0.5, 0.08, d) * vTwinkle;
+              vec3 col = mix(uColorA, uColorB, vRad) * (0.65 + 0.45 * uBrightness);
+              col = min(col, vec3(0.58));
+              gl_FragColor = vec4(col, alpha * 0.85);
+            }
+          `
+        });
+
+        const points = new THREE.Points(geo, mat);
+        root.add(points);
+
+        activeEffect = {
+          root,
+          update(dt, t, audio) {
+            const react = APP_STATE.reactivity;
+            uniforms.uTime.value = t;
+            uniforms.uBass.value = audio.bass * react * APP_STATE.lineLength;
+            uniforms.uTreble.value = audio.treble * react;
+            uniforms.uBrightness.value = APP_STATE.brightness;
+            getThemeColor((0.15 + t * 0.03) % 1, 0.95, uniforms.uColorA.value);
+            getThemeColor((0.85 + t * 0.03) % 1, 0.95, uniforms.uColorB.value);
+            points.rotation.y += dt * (0.18 + audio.mid * 1.45 * react);
+          }
+        };
+      }
+
+      // -----------------------------------------------------------------------
+      // 5. FIBER OPTICS (光纖絲線 - Single LineSegments Draw Call)
+      // -----------------------------------------------------------------------
+      else if (id === 'fiber_optics') {
+        camera.position.set(0, 7, 24);
+        const strandCount = Math.min(360, Math.max(120, Math.floor(count / 6)));
+        const segsPerStrand = 14;
+        const totalSegments = strandCount * segsPerStrand;
+
+        const positions = new Float32Array(totalSegments * 2 * 3);
+        const colors = new Float32Array(totalSegments * 2 * 3);
+        const strands = [];
+
+        for (let s = 0; s < strandCount; s++) {
+          const r = Math.sqrt(Math.random()) * 11;
+          const theta = Math.random() * Math.PI * 2;
+          strands.push({
+            bx: Math.cos(theta) * r,
+            bz: Math.sin(theta) * r,
+            height: 7 + Math.random() * 7.5,
+            phase: Math.random() * Math.PI * 2,
+            bandIdx: s % 32
+          });
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const mat = new THREE.LineBasicMaterial({
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.82
+        });
+        const lines = new THREE.LineSegments(geo, mat);
+        lines.position.y = -6.5;
+        root.add(lines);
+
+        activeEffect = {
+          root,
+          update(dt, t, audio) {
+            const react = APP_STATE.reactivity;
+            const lenScale = APP_STATE.lineLength;
+            const posAttr = geo.attributes.position;
+            const colAttr = geo.attributes.color;
+            let ptr = 0;
+
+            for (let s = 0; s < strandCount; s++) {
+              const st = strands[s];
+              const bVal = audio.bands32[st.bandIdx];
+              const hTotal = st.height * (0.75 + bVal * 0.65 * react) * lenScale;
+              const bendAmt = (0.8 + audio.mid * 4.5 * react);
+              const tipVib = audio.treble * 0.85 * react;
+
+              getThemeColor((st.bandIdx / 32 + t * 0.05) % 1, 0.9, tmpColor);
+
+              let prevX = st.bx;
+              let prevY = 0;
+              let prevZ = st.bz;
+
+              for (let k = 1; k <= segsPerStrand; k++) {
+                const frac = k / segsPerStrand;
+                const curve = frac * frac;
+                const swayX = Math.sin(t * 1.4 + st.phase + frac * 2.2) * bendAmt * curve;
+                const swayZ = Math.cos(t * 1.2 + st.phase + frac * 2.0) * bendAmt * curve;
+                const jitterX = Math.sin(t * 18.0 + st.phase * 5.0 + k) * tipVib * curve;
+                const jitterZ = Math.cos(t * 16.0 + st.phase * 4.0 + k) * tipVib * curve;
+
+                const nx = st.bx + swayX + jitterX;
+                const ny = hTotal * frac;
+                const nz = st.bz + swayZ + jitterZ;
+
+                positions[ptr * 3 + 0] = prevX;
+                positions[ptr * 3 + 1] = prevY;
+                positions[ptr * 3 + 2] = prevZ;
+
+                const shade0 = 0.25 + 0.75 * ((k - 1) / segsPerStrand);
+                colors[ptr * 3 + 0] = tmpColor.r * shade0;
+                colors[ptr * 3 + 1] = tmpColor.g * shade0;
+                colors[ptr * 3 + 2] = tmpColor.b * shade0;
+                ptr++;
+
+                positions[ptr * 3 + 0] = nx;
+                positions[ptr * 3 + 1] = ny;
+                positions[ptr * 3 + 2] = nz;
+
+                const shade1 = 0.25 + 0.75 * frac;
+                colors[ptr * 3 + 0] = tmpColor.r * shade1;
+                colors[ptr * 3 + 1] = tmpColor.g * shade1;
+                colors[ptr * 3 + 2] = tmpColor.b * shade1;
+                ptr++;
+
+                prevX = nx;
+                prevY = ny;
+                prevZ = nz;
+              }
+            }
+            posAttr.needsUpdate = true;
+            colAttr.needsUpdate = true;
+            root.rotation.y += dt * 0.12;
+          }
+        };
+      }
+
+      // -----------------------------------------------------------------------
+      // 6. CIRCULAR SPECTRUM (環形頻譜 - 3 Concentric Hollow Radial Layers)
+      // -----------------------------------------------------------------------
+      else if (id === 'circular_spectrum') {
+        camera.position.set(0, 0, 24);
+        const layerConfigs = [
+          { innerR: 3.4, maxLen: 3.8, rays: 96, z: 0.8 },
+          { innerR: 6.2, maxLen: 4.5, rays: 128, z: 0.0 },
+          { innerR: 9.4, maxLen: 5.2, rays: 160, z: -0.8 }
+        ];
+
+        const layers = layerConfigs.map((cfg, idx) => {
+          const pos = new Float32Array(cfg.rays * 2 * 3);
+          const col = new Float32Array(cfg.rays * 2 * 3);
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+          geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+          const mat = new THREE.LineBasicMaterial({
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.9
+          });
+          const lines = new THREE.LineSegments(geo, mat);
+          lines.position.z = cfg.z;
+          root.add(lines);
+          return { ...cfg, idx, geo, pos, col, lines };
+        });
+
+        activeEffect = {
+          root,
+          update(dt, t, audio) {
+            const react = APP_STATE.reactivity;
+            const lenScale = APP_STATE.lineLength;
+            const ringPulse = 1 + audio.bass * 0.22 * react;
+
+            for (const layer of layers) {
+              layer.lines.rotation.z += dt * (layer.idx % 2 === 0 ? 0.25 : -0.18);
+              const rIn = layer.innerR * ringPulse;
+
+              for (let i = 0; i < layer.rays; i++) {
+                const norm = i / layer.rays;
+                const angle = norm * Math.PI * 2;
+                const sym = Math.abs(((norm * 2) % 2) - 1);
+                const bandIdx = Math.min(31, Math.floor(sym * 32));
+                const amp = audio.bands32[bandIdx];
+
+                const rOut = rIn + (0.35 + amp * layer.maxLen * react) * lenScale;
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+
+                const p = i * 6;
+                layer.pos[p + 0] = cos * rIn;
+                layer.pos[p + 1] = sin * rIn;
+                layer.pos[p + 2] = 0;
+
+                layer.pos[p + 3] = cos * rOut;
+                layer.pos[p + 4] = sin * rOut;
+                layer.pos[p + 5] = 0;
+
+                getThemeColor((norm + layer.idx * 0.2 + t * 0.05) % 1, 0.85 + amp * 0.2, tmpColor);
+                layer.col[p + 0] = tmpColor.r * 0.7;
+                layer.col[p + 1] = tmpColor.g * 0.7;
+                layer.col[p + 2] = tmpColor.b * 0.7;
+
+                layer.col[p + 3] = tmpColor.r;
+                layer.col[p + 4] = tmpColor.g;
+                layer.col[p + 5] = tmpColor.b;
+              }
+              layer.geo.attributes.position.needsUpdate = true;
+              layer.geo.attributes.color.needsUpdate = true;
+            }
+          }
+        };
+      }
+
+      // -----------------------------------------------------------------------
+      // 7. CLASSIC SPHERE (聲波球體)
+      // -----------------------------------------------------------------------
+      else if (id === 'classic_sphere') {
+        camera.position.set(0, 2, 23);
+        const geo = new THREE.BufferGeometry();
+        const baseDirs = new Float32Array(count * 3);
+        const positions = new Float32Array(count * 3);
+        const colors = new Float32Array(count * 3);
+
+        for (let i = 0; i < count; i++) {
+          const phi = Math.acos(1 - 2 * (i + 0.5) / count);
+          const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+          const x = Math.sin(phi) * Math.cos(theta);
+          const y = Math.cos(phi);
+          const z = Math.sin(phi) * Math.sin(theta);
+          baseDirs[i * 3 + 0] = x;
+          baseDirs[i * 3 + 1] = y;
+          baseDirs[i * 3 + 2] = z;
+
+          positions[i * 3 + 0] = x * 7.5;
+          positions[i * 3 + 1] = y * 7.5;
+          positions[i * 3 + 2] = z * 7.5;
+        }
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const sprite = createSoftSpriteTexture();
+        const mat = new THREE.PointsMaterial({
+          size: 0.36,
+          map: sprite,
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.85,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        });
+        const pts = new THREE.Points(geo, mat);
+        root.add(pts);
+
+        activeEffect = {
+          root,
+          update(dt, t, audio) {
+            const react = APP_STATE.reactivity;
+            const lenScale = APP_STATE.lineLength;
+            const baseR = 6.8 + audio.bass * 3.4 * react;
+
+            for (let i = 0; i < count; i++) {
+              const dx = baseDirs[i * 3 + 0];
+              const dy = baseDirs[i * 3 + 1];
+              const dz = baseDirs[i * 3 + 2];
+              const bandIdx = Math.min(31, Math.floor(((dy + 1) * 0.5) * 32));
+              const ripple = Math.sin(dx * 5 + t * 4) * Math.cos(dz * 5 + t * 3.5) * audio.treble * 2.2 * react;
+              const r = baseR + (audio.bands32[bandIdx] * 2.8 * react + ripple) * lenScale;
+
+              positions[i * 3 + 0] = dx * r;
+              positions[i * 3 + 1] = dy * r;
+              positions[i * 3 + 2] = dz * r;
+
+              getThemeColor(((dy + 1) * 0.5 + t * 0.05) % 1, 0.88, tmpColor);
+              colors[i * 3 + 0] = tmpColor.r;
+              colors[i * 3 + 1] = tmpColor.g;
+              colors[i * 3 + 2] = tmpColor.b;
+            }
+            geo.attributes.position.needsUpdate = true;
+            geo.attributes.color.needsUpdate = true;
+            pts.rotation.y += dt * (0.2 + audio.mid * 0.8);
+          }
+        };
+      }
+
+      // -----------------------------------------------------------------------
+      // 8. CLASSIC VORTEX (能量漩渦)
+      // -----------------------------------------------------------------------
+      else if (id === 'classic_vortex') {
+        camera.position.set(0, 12, 24);
+        const geo = new THREE.BufferGeometry();
+        const positions = new Float32Array(count * 3);
+        const colors = new Float32Array(count * 3);
+        const meta = new Float32Array(count * 3); // radius, angle, yOffset
+
+        for (let i = 0; i < count; i++) {
+          const frac = i / count;
+          const r = 1.5 + frac * 13.5;
+          const angle = frac * Math.PI * 18 + (Math.random() - 0.5) * 0.3;
+          const y = (frac - 0.5) * 14;
+          meta[i * 3 + 0] = r;
+          meta[i * 3 + 1] = angle;
+          meta[i * 3 + 2] = y;
+        }
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const mat = new THREE.PointsMaterial({
+          size: 0.32,
+          map: createSoftSpriteTexture(),
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.85,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        });
+        const pts = new THREE.Points(geo, mat);
+        root.add(pts);
+
+        let spinAcc = 0;
+        activeEffect = {
+          root,
+          update(dt, t, audio) {
+            const react = APP_STATE.reactivity;
+            spinAcc += dt * (0.6 + audio.mid * 3.8 * react);
+
+            for (let i = 0; i < count; i++) {
+              const frac = i / count;
+              const bandIdx = i % 32;
+              const bVal = audio.bands32[bandIdx];
+              const r = meta[i * 3 + 0] * (1 + audio.bass * 0.25 * react);
+              const a = meta[i * 3 + 1] + spinAcc * (1.3 - frac * 0.6);
+              const y = meta[i * 3 + 2] + bVal * 3.5 * react * APP_STATE.lineLength;
+
+              positions[i * 3 + 0] = Math.cos(a) * r;
+              positions[i * 3 + 1] = y;
+              positions[i * 3 + 2] = Math.sin(a) * r;
+
+              getThemeColor((frac + t * 0.06) % 1, 0.9, tmpColor);
+              colors[i * 3 + 0] = tmpColor.r;
+              colors[i * 3 + 1] = tmpColor.g;
+              colors[i * 3 + 2] = tmpColor.b;
+            }
+            geo.attributes.position.needsUpdate = true;
+            geo.attributes.color.needsUpdate = true;
+          }
+        };
+      }
+
+      // -----------------------------------------------------------------------
+      // 9. CLASSIC FOUNTAIN (音律噴泉)
+      // -----------------------------------------------------------------------
+      else if (id === 'classic_fountain') {
+        camera.position.set(0, 7, 25);
+        const geo = new THREE.BufferGeometry();
+        const positions = new Float32Array(count * 3);
+        const colors = new Float32Array(count * 3);
+        const vel = new Float32Array(count * 3);
+        const age = new Float32Array(count);
+
+        const resetParticle = (i, boost = 0) => {
+          const angle = Math.random() * Math.PI * 2;
+          const spread = 1.2 + Math.random() * 3.6;
+          positions[i * 3 + 0] = (Math.random() - 0.5) * 0.6;
+          positions[i * 3 + 1] = -7;
+          positions[i * 3 + 2] = (Math.random() - 0.5) * 0.6;
+          vel[i * 3 + 0] = Math.cos(angle) * spread;
+          vel[i * 3 + 1] = 10 + Math.random() * 8 + boost * 14;
+          vel[i * 3 + 2] = Math.sin(angle) * spread;
+          age[i] = Math.random();
+        };
+
+        for (let i = 0; i < count; i++) {
+          resetParticle(i, 0);
+          positions[i * 3 + 1] = -7 + Math.random() * 12;
+        }
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const mat = new THREE.PointsMaterial({
+          size: 0.34,
+          map: createSoftSpriteTexture(),
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.85,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        });
+        root.add(new THREE.Points(geo, mat));
+
+        activeEffect = {
+          root,
+          update(dt, t, audio) {
+            const react = APP_STATE.reactivity;
+            const boost = audio.bass * react * APP_STATE.lineLength;
+            const gravity = 16.5;
+
+            for (let i = 0; i < count; i++) {
+              vel[i * 3 + 1] -= gravity * dt;
+              positions[i * 3 + 0] += vel[i * 3 + 0] * dt;
+              positions[i * 3 + 1] += vel[i * 3 + 1] * dt;
+              positions[i * 3 + 2] += vel[i * 3 + 2] * dt;
+
+              if (positions[i * 3 + 1] < -7.5) {
+                resetParticle(i, boost);
+              }
+
+              const hNorm = Math.min(1, Math.max(0, (positions[i * 3 + 1] + 7.5) / 18));
+              getThemeColor((hNorm + t * 0.05) % 1, 0.9, tmpColor);
+              colors[i * 3 + 0] = tmpColor.r;
+              colors[i * 3 + 1] = tmpColor.g;
+              colors[i * 3 + 2] = tmpColor.b;
+            }
+            geo.attributes.position.needsUpdate = true;
+            geo.attributes.color.needsUpdate = true;
+            root.rotation.y += dt * 0.2;
+          }
+        };
+      }
+
+      // -----------------------------------------------------------------------
+      // 10. CLASSIC CUBE / SPECTRUM MATRIX (頻譜矩陣 - 32x16 3D Particle Matrix)
+      // -----------------------------------------------------------------------
+      else if (id === 'classic_cube') {
+        camera.position.set(14, 14, 22);
+        const cols = 32;
+        const rows = Math.max(12, Math.min(32, Math.floor(count / 32)));
+        const total = cols * rows;
+
+        const geo = new THREE.BufferGeometry();
+        const positions = new Float32Array(total * 3);
+        const colors = new Float32Array(total * 3);
+
+        let idx = 0;
+        for (let x = 0; x < cols; x++) {
+          for (let z = 0; z < rows; z++) {
+            positions[idx * 3 + 0] = (x - cols / 2) * 0.65;
+            positions[idx * 3 + 1] = 0;
+            positions[idx * 3 + 2] = (z - rows / 2) * 0.65;
+            idx++;
+          }
+        }
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const mat = new THREE.PointsMaterial({
+          size: 0.42,
+          map: createSoftSpriteTexture(),
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.9,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        });
+        root.add(new THREE.Points(geo, mat));
+
+        activeEffect = {
+          root,
+          update(dt, t, audio) {
+            const react = APP_STATE.reactivity;
+            const lenScale = APP_STATE.lineLength;
+            let p = 0;
+            for (let x = 0; x < cols; x++) {
+              const bandVal = audio.bands32[x];
+              for (let z = 0; z < rows; z++) {
+                const zNorm = z / rows;
+                const wave = Math.sin(zNorm * Math.PI * 2 + t * 3.0) * 0.35 + 0.65;
+                const h = (bandVal * 11.0 * wave * react * lenScale) - 3.5;
+                positions[p * 3 + 1] = h;
+
+                getThemeColor((x / cols + t * 0.04) % 1, 0.85 + bandVal * 0.25, tmpColor);
+                colors[p * 3 + 0] = tmpColor.r;
+                colors[p * 3 + 1] = tmpColor.g;
+                colors[p * 3 + 2] = tmpColor.b;
+                p++;
+              }
+            }
+            geo.attributes.position.needsUpdate = true;
+            geo.attributes.color.needsUpdate = true;
+            root.rotation.y += dt * 0.16;
+          }
+        };
+      }
+
+      // -----------------------------------------------------------------------
+      // 11. CLASSIC DNA (雙螺旋鏈)
+      // -----------------------------------------------------------------------
+      else if (id === 'classic_dna') {
+        camera.position.set(0, 2, 24);
+        const pairs = Math.min(180, Math.max(64, Math.floor(count / 8)));
+        const strandPts = pairs * 2;
+        const geo = new THREE.BufferGeometry();
+        const positions = new Float32Array(strandPts * 3);
+        const colors = new Float32Array(strandPts * 3);
+
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const mat = new THREE.PointsMaterial({
+          size: 0.45,
+          map: createSoftSpriteTexture(),
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.9,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        });
+        root.add(new THREE.Points(geo, mat));
+
+        // Base-pair rung lines
+        const rungPos = new Float32Array(pairs * 2 * 3);
+        const rungGeo = new THREE.BufferGeometry();
+        rungGeo.setAttribute('position', new THREE.BufferAttribute(rungPos, 3));
+        const rungMat = new THREE.LineBasicMaterial({
+          color: getThemeColor(0.5, 0.75, tmpColor),
+          transparent: true,
+          opacity: 0.45
+        });
+        root.add(new THREE.LineSegments(rungGeo, rungMat));
+
+        activeEffect = {
+          root,
+          update(dt, t, audio) {
+            const react = APP_STATE.reactivity;
+            const lenScale = APP_STATE.lineLength;
+            root.rotation.y += dt * (0.45 + audio.mid * 2.2 * react);
+
+            for (let i = 0; i < pairs; i++) {
+              const frac = i / (pairs - 1);
+              const y = (frac - 0.5) * 20;
+              const bandVal = audio.bands32[i % 32];
+              const radius = (3.4 + audio.bass * 2.2 * react + bandVal * 1.6 * react) * lenScale;
+              const angle = frac * Math.PI * 5 + t * 1.2;
+
+              const x1 = Math.cos(angle) * radius;
+              const z1 = Math.sin(angle) * radius;
+              const x2 = Math.cos(angle + Math.PI) * radius;
+              const z2 = Math.sin(angle + Math.PI) * radius;
+
+              const i1 = i * 2;
+              const i2 = i * 2 + 1;
+              positions[i1 * 3 + 0] = x1;
+              positions[i1 * 3 + 1] = y;
+              positions[i1 * 3 + 2] = z1;
+
+              positions[i2 * 3 + 0] = x2;
+              positions[i2 * 3 + 1] = y;
+              positions[i2 * 3 + 2] = z2;
+
+              rungPos[i * 6 + 0] = x1;
+              rungPos[i * 6 + 1] = y;
+              rungPos[i * 6 + 2] = z1;
+              rungPos[i * 6 + 3] = x2;
+              rungPos[i * 6 + 4] = y;
+              rungPos[i * 6 + 5] = z2;
+
+              getThemeColor((frac + t * 0.05) % 1, 0.92, tmpColor);
+              colors[i1 * 3 + 0] = tmpColor.r;
+              colors[i1 * 3 + 1] = tmpColor.g;
+              colors[i1 * 3 + 2] = tmpColor.b;
+
+              getThemeColor((frac + 0.5 + t * 0.05) % 1, 0.92, tmpColor);
+              colors[i2 * 3 + 0] = tmpColor.r;
+              colors[i2 * 3 + 1] = tmpColor.g;
+              colors[i2 * 3 + 2] = tmpColor.b;
+            }
+            geo.attributes.position.needsUpdate = true;
+            geo.attributes.color.needsUpdate = true;
+            rungGeo.attributes.position.needsUpdate = true;
+            getThemeColor((t * 0.08) % 1, 0.72, rungMat.color);
+          }
+        };
+      }
+
+      // -----------------------------------------------------------------------
+      // 12. CLASSIC STARFIELD (星際穿越 - High-Speed Warp Streaks)
+      // -----------------------------------------------------------------------
+      else if (id === 'classic_starfield') {
+        camera.position.set(0, 0, 20);
+        const starLines = Math.min(1800, count);
+        const positions = new Float32Array(starLines * 2 * 3);
+        const colors = new Float32Array(starLines * 2 * 3);
+        const stars = [];
+
+        for (let i = 0; i < starLines; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const r = 1.2 + Math.random() * 24;
+          stars.push({
+            x: Math.cos(angle) * r,
+            y: Math.sin(angle) * r,
+            z: (Math.random() - 0.5) * 90 - 20,
+            band: i % 32
+          });
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        const mat = new THREE.LineBasicMaterial({
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.85
+        });
+        root.add(new THREE.LineSegments(geo, mat));
+
+        activeEffect = {
+          root,
+          update(dt, t, audio) {
+            const react = APP_STATE.reactivity;
+            const warpSpeed = 24 + audio.bass * 95 * react;
+            const streakLen = (1.2 + audio.bass * 6.5 * react) * APP_STATE.lineLength;
+
+            for (let i = 0; i < starLines; i++) {
+              const st = stars[i];
+              st.z += dt * warpSpeed;
+              if (st.z > 24) {
+                st.z -= 95;
+              }
+              const p = i * 6;
+              positions[p + 0] = st.x;
+              positions[p + 1] = st.y;
+              positions[p + 2] = st.z;
+
+              positions[p + 3] = st.x;
+              positions[p + 4] = st.y;
+              positions[p + 5] = st.z - streakLen;
+
+              getThemeColor((st.band / 32 + t * 0.04) % 1, 0.9, tmpColor);
+              colors[p + 0] = tmpColor.r;
+              colors[p + 1] = tmpColor.g;
+              colors[p + 2] = tmpColor.b;
+
+              colors[p + 3] = tmpColor.r * 0.2;
+              colors[p + 4] = tmpColor.g * 0.2;
+              colors[p + 5] = tmpColor.b * 0.2;
+            }
+            geo.attributes.position.needsUpdate = true;
+            geo.attributes.color.needsUpdate = true;
+            root.rotation.z += dt * 0.08;
+          }
+        };
+      }
+    }
+
+    // =========================================================================
+    // 7. 32-BAND BOTTOM SPECTRUM CANVAS RENDERER
+    // =========================================================================
+    const specCanvas = document.getElementById('spectrum-canvas');
+    const specCtx = specCanvas.getContext('2d');
+
+    function resizeSpectrumCanvas() {
+      const rect = specCanvas.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        specCanvas.width = Math.floor(rect.width * (window.devicePixelRatio || 1));
+        specCanvas.height = Math.floor(rect.height * (window.devicePixelRatio || 1));
+      }
+    }
+
+    function drawBottomSpectrum() {
+      const w = specCanvas.width;
+      const h = specCanvas.height;
+      if (!w || !h) return;
+
+      specCtx.clearRect(0, 0, w, h);
+      const barCount = 32;
+      const gap = Math.max(2, Math.floor(w * 0.004));
+      const barW = (w - gap * (barCount + 1)) / barCount;
+
+      for (let i = 0; i < barCount; i++) {
+        const val = Math.min(1, audioEngine.bands32[i]);
+        const barH = Math.max(2, val * (h - 6));
+        const x = gap + i * (barW + gap);
+        const y = h - barH - 2;
+
+        const hue = (APP_STATE.customHue + (i / barCount) * 55) % 360;
+        specCtx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+        specCtx.fillRect(x, y, barW, barH);
+      }
+    }
+
+    // =========================================================================
+    // 8. UI BINDINGS & INTERACTIVITY
+    // =========================================================================
+    const statusEl = document.getElementById('audio-status');
+    function updateStatus(msg, isWarn = false) {
+      statusEl.textContent = msg;
+      statusEl.classList.toggle('warn', isWarn);
+    }
+
+    // Build 12 Effect Buttons
+    const v4Grid = document.getElementById('fx-grid-v4');
+    const classicGrid = document.getElementById('fx-grid-classic');
+
+    EFFECT_DEFS.forEach((fx) => {
+      const btn = document.createElement('button');
+      btn.className = 'hk-btn fx-btn' + (fx.id === APP_STATE.effectId ? ' active' : '');
+      btn.dataset.fx = fx.id;
+      btn.textContent = fx.name;
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.fx-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        APP_STATE.effectId = fx.id;
+        document.getElementById('hud-fx').textContent = fx.name;
+        buildEffect(fx.id);
+      });
+      if (fx.group === 'v4') v4Grid.appendChild(btn);
+      else classicGrid.appendChild(btn);
+    });
+
+    // Apply initial device tier UI state
+    document.getElementById('hud-tier').textContent = DEVICE.name;
+    document.getElementById('hud-pts').textContent = APP_STATE.particleCount;
+    const sliderParticles = document.getElementById('slider-particles');
+    sliderParticles.value = APP_STATE.particleCount;
+    document.getElementById('val-particles').textContent = APP_STATE.particleCount;
+
+    const btnBloom = document.getElementById('btn-bloom');
+    btnBloom.classList.toggle('active', APP_STATE.bloomEnabled);
+    btnBloom.textContent = APP_STATE.bloomEnabled ? '[ BLOOM: 開啟 ]' : '[ BLOOM: 關閉 ]';
+
+    const leftDock = document.getElementById('left-dock');
+    const rightDock = document.getElementById('right-dock');
+    const toggleLeftBtn = document.getElementById('toggle-left-btn');
+    const toggleRightBtn = document.getElementById('toggle-right-btn');
+
+    function setDockState(side, open) {
+      const dock = side === 'left' ? leftDock : rightDock;
+      const btn = side === 'left' ? toggleLeftBtn : toggleRightBtn;
+      dock.classList.toggle('collapsed', !open);
+      btn.classList.toggle('active', open);
+      // On narrow mobile screens, ensure opening one dock closes the other so center 3D remains visible
+      if (open && window.innerWidth <= 860) {
+        const otherDock = side === 'left' ? rightDock : leftDock;
+        const otherBtn = side === 'left' ? toggleRightBtn : toggleLeftBtn;
+        otherDock.classList.add('collapsed');
+        otherBtn.classList.remove('active');
+      }
+    }
+
+    if (DEVICE.collapseSidebars) {
+      setDockState('left', false);
+      setDockState('right', false);
+    }
+
+    toggleLeftBtn.addEventListener('click', () => setDockState('left', leftDock.classList.contains('collapsed')));
+    toggleRightBtn.addEventListener('click', () => setDockState('right', rightDock.classList.contains('collapsed')));
+    document.getElementById('close-left-btn').addEventListener('click', () => setDockState('left', false));
+    document.getElementById('close-right-btn').addEventListener('click', () => setDockState('right', false));
+
+    // Sliders
+    document.getElementById('slider-brightness').addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      APP_STATE.brightness = v / 100;
+      document.getElementById('val-brightness').textContent = `${v}%`;
+    });
+
+    sliderParticles.addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      APP_STATE.particleCount = v;
+      document.getElementById('val-particles').textContent = v;
+      document.getElementById('hud-pts').textContent = v;
+      buildEffect(APP_STATE.effectId);
+    });
+
+    document.getElementById('slider-reactivity').addEventListener('input', (e) => {
+      const v = Number(e.target.value) / 100;
+      APP_STATE.reactivity = v;
+      document.getElementById('val-reactivity').textContent = `${v.toFixed(2)}x`;
+    });
+
+    document.getElementById('slider-linelen').addEventListener('input', (e) => {
+      const v = Number(e.target.value) / 100;
+      APP_STATE.lineLength = v;
+      document.getElementById('val-linelen').textContent = `${v.toFixed(2)}x`;
+    });
+
+    document.getElementById('slider-volume').addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      document.getElementById('val-volume').textContent = `${v}%`;
+      audioEngine.setVolume(v / 100);
+    });
+
+    // Themes & Hue
+    const sliderHue = document.getElementById('slider-hue');
+    const valHue = document.getElementById('val-hue');
+
+    document.querySelectorAll('.theme-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const key = btn.dataset.theme;
+        APP_STATE.themeKey = key;
+        APP_STATE.customHue = THEMES[key].baseHue;
+        sliderHue.value = APP_STATE.customHue;
+        valHue.textContent = `${APP_STATE.customHue}°`;
+        syncHackerHudAccent();
+      });
+    });
+
+    sliderHue.addEventListener('input', (e) => {
+      APP_STATE.customHue = Number(e.target.value);
+      valHue.textContent = `${APP_STATE.customHue}°`;
+      syncHackerHudAccent();
+    });
+
+    btnBloom.addEventListener('click', () => {
+      APP_STATE.bloomEnabled = !APP_STATE.bloomEnabled;
+      bloomPass.enabled = APP_STATE.bloomEnabled;
+      btnBloom.classList.toggle('active', APP_STATE.bloomEnabled);
+      btnBloom.textContent = APP_STATE.bloomEnabled ? '[ BLOOM: 開啟 ]' : '[ BLOOM: 關閉 ]';
+    });
+
+    // Audio Source Controls
+    const btnPlayPause = document.getElementById('btn-play-pause');
+    const activeSrcLabel = document.getElementById('active-src-label');
+
+    function setActiveSourceBtn(id, label) {
+      ['src-synth', 'src-file', 'src-mic'].forEach(bid => {
+        document.getElementById(bid).classList.toggle('active', bid === id);
+      });
+      activeSrcLabel.textContent = label;
+    }
+
+    function syncPlayBtnUI(playing) {
+      btnPlayPause.textContent = playing ? '[ ⏸ 暫停 ]' : '[ ▶ 播放 ]';
+      btnPlayPause.classList.toggle('active', playing);
+    }
+
+    btnPlayPause.addEventListener('click', async () => {
+      if (!audioEngine.ctx && audioEngine.sourceMode === 'synth') {
+        await audioEngine.useSynth();
+        setActiveSourceBtn('src-synth', '原創示範音樂');
+        syncPlayBtnUI(true);
+        return;
+      }
+      const playing = audioEngine.togglePlayPause();
+      syncPlayBtnUI(playing);
+    });
+
+    document.getElementById('src-synth').addEventListener('click', async () => {
+      await audioEngine.useSynth();
+      setActiveSourceBtn('src-synth', '原創示範音樂');
+      syncPlayBtnUI(true);
+    });
+
+    const fileInput = document.getElementById('audio-file-input');
+    document.getElementById('src-file').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) {
+        await audioEngine.loadAudioFile(file);
+        setActiveSourceBtn('src-file', '本機音訊檔案');
+        syncPlayBtnUI(true);
+      }
+    });
+
+    document.getElementById('src-mic').addEventListener('click', async () => {
+      await audioEngine.useMicrophone();
+      setActiveSourceBtn('src-mic', '麥克風即時收音');
+      syncPlayBtnUI(true);
+    });
+
+    document.getElementById('src-tab').addEventListener('click', async () => {
+      await audioEngine.captureTabAudio();
+      if (audioEngine.tabAudioCaptured) {
+        activeSrcLabel.textContent = '分頁即時音訊';
+        syncPlayBtnUI(true);
+      }
+    });
+
+    // YouTube URL / Video ID Parser
+    function extractYouTubeId(input) {
+      const trimmed = input.trim();
+      if (!trimmed) return null;
+      if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+      const match = trimmed.match(/(?:v=|\/embed\/|\/shorts\/|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+      return match ? match[1] : null;
+    }
+
+    document.getElementById('btn-yt-load').addEventListener('click', () => {
+      const raw = document.getElementById('yt-url-input').value;
+      const vid = extractYouTubeId(raw);
+      if (!vid) {
+        updateStatus('[ERR] 無效的 YouTube 網址或 11 碼影片 ID。', true);
+        return;
+      }
+      audioEngine.setYouTubeMode(vid);
+      setActiveSourceBtn('', 'YouTube 嵌入模式');
+      syncPlayBtnUI(true);
+    });
+
+    // Drag and Drop Audio Files
+    const dropOverlay = document.getElementById('drop-overlay');
+    let dragCounter = 0;
+    window.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      dragCounter++;
+      dropOverlay.classList.add('active');
+    });
+    window.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        dropOverlay.classList.remove('active');
+      }
+    });
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      dropOverlay.classList.remove('active');
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) {
+        await audioEngine.loadAudioFile(file);
+        setActiveSourceBtn('src-file', '本機音訊檔案');
+        syncPlayBtnUI(true);
+      }
+    });
+
+    // Screenshot PNG Export
+    document.getElementById('btn-screenshot').addEventListener('click', () => {
+      composer.render();
+      const dataUrl = renderer.domElement.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = `10010110-visual-${APP_STATE.effectId}-${Date.now()}.png`;
+      link.href = dataUrl;
+      link.click();
+      updateStatus('[PNG] 已匯出高解析度 3D 視覺截圖。', false);
+    });
+
+    // Pure Visual Mode & ESC Recovery
+    function setPureVisualMode(enabled) {
+      document.body.classList.toggle('pure-visual', enabled);
+    }
+    document.getElementById('btn-pure').addEventListener('click', () => setPureVisualMode(true));
+    document.getElementById('exit-pure-btn').addEventListener('click', () => setPureVisualMode(false));
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.body.classList.contains('pure-visual')) {
+        setPureVisualMode(false);
+      }
+    });
+
+    // Fullscreen Toggle
+    document.getElementById('btn-fullscreen').addEventListener('click', async () => {
+      try {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen();
+        } else {
+          await document.exitFullscreen();
+        }
+      } catch (err) {
+        updateStatus(`[WARN] 瀏覽器不支援或阻擋全螢幕：${err.message}`, true);
+      }
+    });
+
+    // Window Resize Handler
+    window.addEventListener('resize', () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, DEVICE.maxDpr));
+      renderer.setSize(w, h);
+      composer.setSize(w, h);
+      bloomPass.setSize(w, h);
+      resizeMatrixRain();
+      resizeSpectrumCanvas();
+    });
+
+    // =========================================================================
+    // 9. MAIN RENDER LOOP (WITH FPS THROTTLING & TAB VISIBILITY PAUSE)
+    // =========================================================================
+    let isPageHidden = document.hidden;
+    document.addEventListener('visibilitychange', () => {
+      isPageHidden = document.hidden;
+    });
+
+    const hudFps = document.getElementById('hud-fps');
+    const valBass = document.getElementById('val-bass');
+    const valMid = document.getElementById('val-mid');
+    const valTreble = document.getElementById('val-treble');
+
+    const minFrameInterval = 1000 / DEVICE.targetFps;
+    let lastFrameTime = performance.now();
+    let fpsCounter = 0;
+    let fpsLastUpdate = performance.now();
+
+    // Initialize default scene & UI sizes
+    syncHackerHudAccent();
+    buildEffect(APP_STATE.effectId);
+    resizeSpectrumCanvas();
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+
+      if (isPageHidden) {
+        lastFrameTime = now;
+        return;
+      }
+
+      const elapsed = now - lastFrameTime;
+      if (elapsed < minFrameInterval - 1) return;
+
+      const dt = Math.min(0.05, elapsed / 1000);
+      lastFrameTime = now;
+      const t = now * 0.001;
+
+      // Update Web Audio analysis
+      audioEngine.update();
+
+      // Update active 3D effect
+      if (activeEffect && activeEffect.update) {
+        activeEffect.update(dt, t, audioEngine);
+      }
+
+      controls.update();
+      composer.render();
+
+      // Render 2D HUD overlays
+      renderMatrixRain(now);
+      drawBottomSpectrum();
+
+      // Telemetry updates
+      fpsCounter++;
+      if (now - fpsLastUpdate >= 500) {
+        const fps = Math.round((fpsCounter * 1000) / (now - fpsLastUpdate));
+        hudFps.textContent = fps;
+        fpsCounter = 0;
+        fpsLastUpdate = now;
+
+        valBass.textContent = audioEngine.bass.toFixed(2);
+        valMid.textContent = audioEngine.mid.toFixed(2);
+        valTreble.textContent = audioEngine.treble.toFixed(2);
+      }
+    }
+
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
